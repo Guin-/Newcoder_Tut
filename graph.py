@@ -59,8 +59,14 @@ def visualize_days():
 	# the labels
 	plt.xticks(range(len(data_list)), labels)
 	# save the plot
-
+	plt.show() 
 	# close plot file
+
+def main():
+	visualize_days():
+
+if __name__ == "__main__":
+	main()
 
 
 
