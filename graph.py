@@ -6,25 +6,10 @@ from collections import Counter
 import csv
 import matplotlib.pyplot as plt
 import numpy as np
+from parse import parse
 
-MY_FILE = '../data/sample_sfpd_incident_all.csv'
+MY_FILE = "../data/sample_sfpd_incident_all.csv"
 
-def parse(raw_file, delimiter):
-
-	opened_file = open(raw_file)
-
-	csv_data = csv.reader(raw_file, delimiter = delimiter)
-
-	parsed_data = []
-
-	fields = csv_data.next()
-
-	for row in csv_data:
-		parsed_data.appened(dict(zip(fields, row)))
-	
-	opened_file.close()
-
-	return parsed_data
 
 def visualize_days():
 	'''Visualize data by day of week'''
@@ -35,6 +20,8 @@ def visualize_days():
 	# make a new variable, 'counter', from iterating through each line of
 	# data in the parsed data, and count how many incidents happen on each
 	# day of the week
+#	for item in data_file:
+#		counter = Counter(item['DayOfWeek'])
 	counter = Counter(item["DayOfWeek"] for item in data_file)
 	# use list data struct to manually set each counter key to preserve order	
 	data_list = [ 
@@ -54,17 +41,59 @@ def visualize_days():
 
 	# with that y-axis data, assign it to a matplotlib plot instance
 	plt.plot(data_list)
-	lables = tuple(day_list)
-	# create the amount of ticks needed for our x-axis, and assign 
-	# the labels
-	plt.xticks(range(len(data_list)), labels)
+
+	plt.xticks(range(len(day_tuple)), day_tuple)
+
 	# save the plot
-	plt.show() 
+	plt.savefig("Days.png")
+
 	# close plot file
+	plt.clf()
+
+def visualize_type():
+	'''Visualize data by category in a bar graph'''
+
+	# Get parsed data file	
+	data_file = parse(MY_FILE, ",")
+
+	# Create a tally for each item under Category in the file	
+	counter = Counter(item["Category"] for item in data_file)
+
+	# Create a tuple of the different keys to place on x-axis
+	labels = tuple(counter.keys())
+
+	# Set locations of the x ticks(labels)
+	xlocations = np.arange(len(labels)) + 0.5
+	
+	# Set width of each bar
+	width = 0.5
+
+	# Assign the data to a bar plot (values = tally)
+	plt.bar(xlocations, counter.values(), width = width)
+
+	# Set the x ticks to be in the middle of each bar, with keys from the label tuple, and a 90 degree rotation	
+	plt.xticks(xlocations + width / 2, labels, rotation = 90)
+
+	# Give more space for the labels
+	plt.subplots_adjust(bottom = 0.4)
+
+	# Change/increase the size of the window that contains the graph
+	plt.rcParams['figure.figsize'] = 12, 8
+
+	# Save the graph
+	plt.savefig("Type.png")
+
+	# Close the file
+	plt.clf()
+
+
+
+
+
 
 def main():
-	visualize_days():
-
+#	visualize_days()
+	visualize_type()
 if __name__ == "__main__":
 	main()
 
