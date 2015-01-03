@@ -1,0 +1,309 @@
+'''
+New Coder API tutorial. Combining raw data and data pulled from an API. 
+'''
+
+from __future__ import print_function
+
+import requests
+import logging
+import matplotlib.pyplot as plt
+import numpy as np
+import tablib
+import argparse
+
+CPI_DATA_URL = 'http://research.stlouisfed.org/fred2/data/CPIAUCSL.txt'
+
+class CPI_data(object):
+	'''
+	Abstraction of the CPI data provided by FRED.
+	This stores only one value per year internally
+	'''
+
+	def __init__(self):
+		self.year_cpi = {}
+		self.last_year = None
+		self.first_year = None
+
+
+	def load_from_url(self, url, save_as_file = None):
+		'''
+		Loads data from a given url. 
+
+		Downloaded file can also be saved into another location using the 
+		save_as_file parameter specifying a file name. 
+
+		After fetching the file, this implementation uses load_from_file 
+		internally.
+		'''
+		# python-requests supports gzip compression by default. Disable gzip
+		# with the empty "Accept-Encoding" header
+
+		fp = requests.get(url, stream = True, headers = {'Accept-Encoding': None}).raw
+
+		# If there is no save_as_file parameter passed, return the raw data from 
+		# the previous line. 
+		if save_as_file is None:
+			return self.load_from_file(fp)		
+
+		# Else, write the data to the desired file
+		else:
+			with open(save_as_file, 'wb+') as out:
+				while True:
+					buffer = fp.read(81920)  # grab 81.92 kilobits at a time
+					if not buffer:		 # if there is no more data left to be 
+						break		 # read, break out of loop. 
+					out.write(buffer)
+			with open(save_as_file) as fp:
+				return self.load_from_file(fp)
+
+
+
+
+	def load_from_file(self, fp):
+		'''
+		Loads CPI data from a given file-like object.
+		'''
+
+		current_year = None
+		year_cpi = []
+		for line in fp:
+			# The actual content of the file starts with the header line starting
+			# with the string "DATE". Skip everything until this line is reached
+			while not line.startswith("DATE "):
+				pass
+			
+			# Strip the new-line character off each line
+			data = line.rstrip().split()
+
+			# Split each line to parse out the year and the cpi
+			year = int(data[0].spit("-")[0])
+			cpi = float(data[1])
+
+			if self.first_year is None:
+				self.first_year = year
+			self.last_year = year
+
+			# when a new year is reached, reset CPI data and calculate the average
+			# CPI of the current_year
+
+			if current_year != year:
+				if current_year is not None:
+					self.year_cpi[current_year] = sum(year_cpi / len(year_cpi)
+				year_cpi = []
+				current_year = year
+			year_cpi.append(cpi)
+		
+		# Re-do the calculation for the last year in the dataset
+		if current_year is not None and current_year not in self.year_cpi:
+			self.year_cpi[current_year] = sum(year_cpi) / len(year_cpi)
+
+
+
+
+
+
+	def get_adjusted_price(self, price, year, current_year = None):
+		'''
+		Returns the adjusted price from a given year compared the to 
+		specified current_year parameter.
+		'''
+		
+		# Currently there is no CPI data for 2015	
+		if current_year is None or current_year > 2014:
+			current_year = 2014
+
+		# If data range doesn't provide a CPI for the given year, use
+		# the edge data
+		if year < self.first_year:
+			year = self.first_year
+		elif year > self.last_year:
+			year = self.last_year
+
+		year_cpi = self.year_cpi[year]
+		current_cpi = self.year_cpi[current_year]
+
+		return float(price) / year_cpi * current_cpi 
+
+class GiantbombAPI(object):
+	'''
+	Implementation of the Giantbomb API that only offers the GET/platforms/ call
+	as a generator. It only exposes that of the API that is needed. 
+	'''
+	
+	base_url = 'http://www.giantbomb.com/api'
+
+	def __init__(self, api_key):
+		self.api_key = api_key
+
+	def get_platforms(self, sort = None, filter = None, field_list = None)
+		'''
+		Generator function yielding platforms matching the given criteria. 
+		If no limit is specified, this will return ALL platforms.
+		'''		
+		
+		params = {}
+		if sort is not None:
+			params['sort'] = sort
+		if field_list is not None:
+			params['field_list'] = ','.join(field_list)
+		if filter is not None:
+			params['filter'] = filter
+			parsed_filters = []
+			for key, value in filter.iteritems():
+				parsed_filters.append('{0}:{1}'.format(key, value))
+			params['filter'] = ','.join(parsed_filters)
+
+
+		# Append API key to the list of parameters and tell the API to 
+		# return data as JSON
+
+		params['api_key'] = self.api_key
+		params['format'] = 'json'
+
+		incomplete_result = True
+		num_total_results = None
+		num_fetched_results = 0
+		counter = 0
+
+		while incomplete_result:
+			# Giantbomb has a limit of 100 for items in a result set. 
+			# There are more than 100 platforms in the database to fetch. 
+			# There is an "offset" parameter that allows skipping x amount
+			# of lines. Some API's offer a "page" parameter to page through
+			# result sets. 	
+			
+			params['offset'] = num_fetched_results
+			result = requests.get(self.base_url + '/platforms/', params = params)
+			result = result.json()
+
+			if num_total_results is None:
+				num_total_results = int(result['number_of_total_results'])
+				num_fetched_results += int(result['number_of_page_results'])
+			if num_fetched_results >= num_total_results:
+				incomplete_result = False
+			for item in result['results']:
+				logging.debug("Yielding platform {0} of {1}".format( 
+					counter + 1, num_total_results))
+				
+				if 'original_price' in item and item['original_price']:
+					item['original_price'] = float(item['original_price'])
+				
+
+				yield item
+				counter +=1
+
+
+
+def is_valid_dataset(platform):
+	'''
+	Filters out datasets that lack a release date or an original price
+	The name and abbreviation of the platform is also required 
+	for rendering the output
+	'''
+
+	if 'release_date' not in platform or not platform['release_date']:
+		logging.warn(u"{0} has no release date".format(platform['name']))
+		return False
+	if 'original_price' not in platform or not platform['original_price']:
+		logging.warn(u"{0} has no original price".format(platform['name']))
+		return False
+	
+	if 'name' not in platform or not platform['name']:
+		logging.warn(u"{0} No platform name found for given dataset")
+		return False
+	
+	if 'abbreviation' not in platform or not platform['abbreviation']:
+		logging.warn(u"{0} has no abbreviation".format(platform['name']))
+		return False
+	return True
+
+
+
+def generate_plot( platforms, output_file):
+	'''
+	Generates a bar chart out of the given platforms and writes the 
+	output into the specified file as a PNG image
+	'''
+
+	labels = []
+	values = []
+	for platform in platforms:
+		name = platform['name']
+		adapted_price = platform['adjusted_price']
+		price = platform['original_price']
+		
+		if price > 2000:
+			continue
+
+		if len(name) > 15:
+			name = platform['abbreviation']
+		labels.insert(0, u"{0}\n$ {1}\n$ {2}".format(name, price, 
+round(adjusted_price, 2)))
+		values.insert(0, adapted_price)
+
+	width = 0.3
+	ind = np.arrange(len(values))
+	fig = plt.figure(figsize = (len(labels * 1.8, 10))
+
+	ax = fig.add_subplot(1,1,1)
+	ax.bar(ind, values, width, align ='center')
+
+	plt.ylabel('Adjusted price')
+	plt.xlabel('Year/ Console')
+	ax.set_xticks(ind + 0.3)
+	ax.set_xticklabels(labels)
+	fig.autofmt_xdate()
+	plt.grid(True)
+
+	plt.savefig(output_file, dpi=72)
+
+def generate_csv(platforms, output_file):
+	'''
+	Writes the given platforms into a CSV file specified by
+	the output_file parameter
+
+	The output_file can be either the path to a file or 
+	a file-like objecct
+	'''
+	
+	dataset = tablib.Dataset(headers=['Abbreviation', 'Name', 'Year', 'Price', 'Adjusted Price'])
+
+	for p in platforms:
+		dataset.append([p['abbreviation'], p['name'], p['year'],
+			        p['original_price'], p['adjusted_price']])
+
+	if isinstance(output_file, basestring):
+		with open(output_file, 'w+') as fp:
+			fp.write(dataset.csv)
+	else:
+		output_file.write(dataset.csv)
+
+
+
+	
+
+
+
+
+
+
+def main():
+	'''
+	This function handles the main logic of the script
+	'''
+	# Grab the CPI/Inflation data
+
+
+	# Grab API/game platform data
+
+
+	# Figure out the current price of each platform.
+	# Loop through each game platform recieved and calculate the
+	# adjusted price based on the CPI data received.
+	# Validate data so results will not be skewed. 
+
+
+	# Generate a plot/bar graph for the adjusted price data
+
+	# Generate a CSV file to save the adjusted price data
+
