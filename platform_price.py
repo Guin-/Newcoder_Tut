@@ -276,7 +276,7 @@ def is_valid_dataset(platform):
 		return False
 	
 	if 'name' not in platform or not platform['name']:
-		logging.warn(u"{0} No platform name found for given dataset")
+		logging.warn(u"No platform name found for given dataset")
 		return False
 	
 	if 'abbreviation' not in platform or not platform['abbreviation']:
@@ -346,7 +346,7 @@ def main():
 		with open(opts.cpi_file) as fp:
 			cpi_data.load_from_file(fp)
 	else:
-		cpi.data_load_from_url(opts.cpi_data_url, save_as_file = opts.cpi_file)
+		cpi_data.load_from_url(opts.cpi_data_url, save_as_file = opts.cpi_file)
 
 
 
