@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tablib
 import argparse
+import os
 
 CPI_DATA_URL = 'http://research.stlouisfed.org/fred2/data/CPIAUCSL.txt'
 
@@ -63,20 +64,22 @@ class CPI_data(object):
 		'''
 		Loads CPI data from a given file-like object.
 		'''
-
+		reached_dataset = False
 		current_year = None
 		year_cpi = []
 		for line in fp:
 			# The actual content of the file starts with the header line starting
 			# with the string "DATE". Skip everything until this line is reached
-			while not line.startswith("DATE "):
-				pass
+			if not reached_dataset:
+				if line.startswith("DATE "):
+					reached_dataset = True
+				continue
 			
 			# Strip the new-line character off each line
 			data = line.rstrip().split()
 
 			# Split each line to parse out the year and the cpi
-			year = int(data[0].spit("-")[0])
+			year = int(data[0].split("-")[0])
 			cpi = float(data[1])
 
 			if self.first_year is None:
@@ -88,7 +91,7 @@ class CPI_data(object):
 
 			if current_year != year:
 				if current_year is not None:
-					self.year_cpi[current_year] = sum(year_cpi / len(year_cpi)
+					self.year_cpi[current_year] = sum(year_cpi) / len(year_cpi)
 				year_cpi = []
 				current_year = year
 			year_cpi.append(cpi)
@@ -109,8 +112,8 @@ class CPI_data(object):
 		'''
 		
 		# Currently there is no CPI data for 2015	
-		if current_year is None or current_year > 2014:
-			current_year = 2014
+		if current_year is None or current_year > 2013:
+			current_year = 2013
 
 		# If data range doesn't provide a CPI for the given year, use
 		# the edge data
@@ -135,7 +138,7 @@ class GiantbombAPI(object):
 	def __init__(self, api_key):
 		self.api_key = api_key
 
-	def get_platforms(self, sort = None, filter = None, field_list = None)
+	def get_platforms(self, sort = None, filter = None, field_list = None):
 		'''
 		Generator function yielding platforms matching the given criteria. 
 		If no limit is specified, this will return ALL platforms.
@@ -194,32 +197,10 @@ class GiantbombAPI(object):
 
 
 
-def is_valid_dataset(platform):
-	'''
-	Filters out datasets that lack a release date or an original price
-	The name and abbreviation of the platform is also required 
-	for rendering the output
-	'''
-
-	if 'release_date' not in platform or not platform['release_date']:
-		logging.warn(u"{0} has no release date".format(platform['name']))
-		return False
-	if 'original_price' not in platform or not platform['original_price']:
-		logging.warn(u"{0} has no original price".format(platform['name']))
-		return False
-	
-	if 'name' not in platform or not platform['name']:
-		logging.warn(u"{0} No platform name found for given dataset")
-		return False
-	
-	if 'abbreviation' not in platform or not platform['abbreviation']:
-		logging.warn(u"{0} has no abbreviation".format(platform['name']))
-		return False
-	return True
 
 
 
-def generate_plot( platforms, output_file):
+def generate_plot(platforms, output_file):
 	'''
 	Generates a bar chart out of the given platforms and writes the 
 	output into the specified file as a PNG image
@@ -243,7 +224,7 @@ round(adjusted_price, 2)))
 
 	width = 0.3
 	ind = np.arrange(len(values))
-	fig = plt.figure(figsize = (len(labels * 1.8, 10))
+	fig = plt.figure(figsize = (len(labels) * 1.8, 10))
 
 	ax = fig.add_subplot(1,1,1)
 	ax.bar(ind, values, width, align ='center')
@@ -280,6 +261,56 @@ def generate_csv(platforms, output_file):
 
 
 
+def is_valid_dataset(platform):
+	'''
+	Filters out datasets that lack a release date or an original price
+	The name and abbreviation of the platform is also required 
+	for rendering the output
+	'''
+
+	if 'release_date' not in platform or not platform['release_date']:
+		logging.warn(u"{0} has no release date".format(platform['name']))
+		return False
+	if 'original_price' not in platform or not platform['original_price']:
+		logging.warn(u"{0} has no original price".format(platform['name']))
+		return False
+	
+	if 'name' not in platform or not platform['name']:
+		logging.warn(u"{0} No platform name found for given dataset")
+		return False
+	
+	if 'abbreviation' not in platform or not platform['abbreviation']:
+		logging.warn(u"{0} has no abbreviation".format(platform['name']))
+		return False
+	return True
+
+
+
+def parse_args():
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--giantbomb-api-key', required = True, 
+				help = 'API key provided by Giantbomb.com')
+	parser.add_argument('--cpi-file', 
+				default = os.path.join(os.path.dirname(__file__),'CPIAUCSL.txt'),
+				help = 'Path to file containing the CPI data. Also acts as target' 
+					'file if the data has to be downloaded first.')
+	parser.add_argument('--cpi-data-url', default= CPI_DATA_URL,
+				help = 'URL which should be used as CPI data source')
+	parser.add_argument('--debug', default = False, action = 'store_true', 
+				help = 'Increases the output level')
+	parser.add_argument('--csv-file', 
+				help = 'Path to CSV file which should contain the data output')
+	parser.add_argument('--plot-file',
+				help = 'Path to the PNG file which should contain the data ouput')
+	parser.add_argument('--limit', type = int,
+				help = 'Number of recent platforms to be considered')
+
+	opts = parser.parse_args()
+	if not (opts.plot_file or opts.csv_file):
+		parser.error("You have to specify either a --csv-file or --plot-file!")
+	return opts
+
+
 	
 
 
@@ -291,10 +322,32 @@ def main():
 	'''
 	This function handles the main logic of the script
 	'''
+
+	opts = parse_args()
+
+	if opts.debug:
+		logging.basicConfig(level = logging.DEBUG)
+	else:
+		logging.basicConfig(level = logging.INFO)
+
+
 	# Grab the CPI/Inflation data
-
-
 	# Grab API/game platform data
+
+	cpi_data = CPI_data()
+	gb_api = GiantbombAPI(opts.giantbomb_api_key)
+
+	print ("Disclaimer: This script uses data provided by FRED, Federal"
+		"Reserve Economic Data, from the Federal Reserve Bank of St. Louis"
+		"and Giantbomb.com:\n - {0}\n - http://www.giantbomb.com/api/\n"
+		.format(CPI_DATA_URL))
+
+	if os.path.exists(opts.cpi_file):
+		with open(opts.cpi_file) as fp:
+			cpi_data.load_from_file(fp)
+	else:
+		cpi.data_load_from_url(opts.cpi_data_url, save_as_file = opts.cpi_file)
+
 
 
 	# Figure out the current price of each platform.
@@ -302,8 +355,37 @@ def main():
 	# adjusted price based on the CPI data received.
 	# Validate data so results will not be skewed. 
 
+	platforms = []
+	counter = 0
 
+	for platform in gb_api.get_platforms(sort='release_date: desc', 
+				             field_list = ['release_date', 
+							'original_price',
+							'name',
+							'abbreviation']):
+
+		if not is_valid_dataset(platform):
+			continue
+		year = int(platform['release_date'].split('-')[0])
+		price = platform['original_price']
+		adjusted_price = cpi_data.get_adjusted_price(price,year)
+		platform['year'] = year
+		platform['original_price'] = price
+		platform['adjusted_price'] = adjusted_price
+		platforms.append(platform)
+
+		if opts.limit is not None and counter + 1 >= opts.limit:
+			break
+		counter += 1
+
+	
 	# Generate a plot/bar graph for the adjusted price data
-
 	# Generate a CSV file to save the adjusted price data
+	
+	if opts.plot_file:
+		generate_plot(platforms, opts.plot_file)
+	if opts.csv_file:
+		generate_csv(platforms, opts.csv_file)
 
+if __name__ == '__main__':
+	main()
